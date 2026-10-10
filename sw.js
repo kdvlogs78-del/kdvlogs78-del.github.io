@@ -4,7 +4,7 @@
  *   jsPDF, autotable, Google Fonts) using stale-while-revalidate.
  * Bump CACHE_VERSION whenever you ship new app files.
  */
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const CACHE_NAME = `agency-ledger-${CACHE_VERSION}`;
 
 const APP_SHELL = [
