@@ -20,19 +20,50 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 
   <style>
-    html, body { height: 100%; }
-    body {
+    /* The page itself never scrolls: only the middle area of the app does. */
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: #0b1220;
       font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background-color: #e5e7eb;
-      background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px);
-      background-size: 22px 22px;
       -webkit-tap-highlight-color: transparent;
+      -webkit-text-size-adjust: 100%;
+      touch-action: manipulation;
     }
-    .shell { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    #app {
+      position: fixed;
+      top: 0; bottom: 0; left: 0; right: 0;
+      margin: 0 auto;
+      width: 100%;
+      max-width: 30rem;
+      display: flex;
+      flex-direction: column;
+      background: #f1f5f9;
+      color: #0f172a;
+      overflow: hidden;
+    }
+    @media (min-width: 31rem) {
+      #app { border-left: 4px solid #111827; border-right: 4px solid #111827; box-shadow: 0 0 0 1px #1f2937; }
+    }
+    #scroller {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+    /* App chrome is not selectable text, like a native app */
+    header, nav, button, label { user-select: none; -webkit-user-select: none; }
     input[type=number]::-webkit-outer-spin-button,
     input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; }
     .tabnum { font-variant-numeric: tabular-nums; }
+    .navbtn[aria-selected="true"] { background: #111827; color: #fff; }
+    .navbtn[aria-selected="true"] i { color: #a5b4fc; }
+    .seg[aria-pressed="true"] { background: #111827; color: #fff; }
     /* Delete button: hidden until hover, keyboard focus, or a tap on the row (touch) */
     .txn .del { opacity: 0; transform: scale(.9); transition: opacity .15s, transform .15s; }
     .txn:hover .del, .txn:focus-within .del, .txn:focus .del, .txn.revealed .del { opacity: 1; transform: scale(1); }
@@ -40,48 +71,44 @@
   </style>
 </head>
 
-<body class="text-slate-900">
-  <div class="shell">
-    <main class="max-w-md mx-auto min-h-screen bg-slate-50 border-x-4 border-[#111827] shadow-[12px_12px_0_0_#111827] md:my-6 md:border-4 md:min-h-0">
+<body>
+  <div id="app">
 
-      <!-- HEADER -->
-      <header class="bg-[#111827] text-white px-5 pt-5 pb-6 border-b-4 border-black">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <h1 class="text-2xl font-black tracking-tight leading-none">Agency Ledger</h1>
-            <p id="monthLabel" class="mt-1.5 text-sm font-black text-indigo-300"></p>
-          </div>
-          <button id="newMonthBtn" type="button" aria-label="Start new month"
-            class="shrink-0 w-12 h-12 grid place-items-center border-4 border-white bg-[#111827] text-white text-lg hover:bg-white hover:text-[#111827] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-400 transition-colors">
-            <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>
-          </button>
+    <!-- FIXED HEADER -->
+    <header class="shrink-0 bg-[#111827] text-white px-4 pb-3 border-b-4 border-black"
+            style="padding-top: calc(env(safe-area-inset-top, 0px) + 12px)">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
+          <h1 class="text-xl font-black tracking-tight leading-none">Agency Ledger</h1>
+          <p id="monthLabel" class="mt-1 text-xs font-black text-indigo-300"></p>
         </div>
+        <button id="newMonthBtn" type="button" aria-label="Start new month"
+          class="shrink-0 w-11 h-11 grid place-items-center border-4 border-white text-white text-base active:bg-white active:text-[#111827] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-400">
+          <i class="fa-solid fa-calendar-plus" aria-hidden="true"></i>
+        </button>
+      </div>
 
-        <div class="mt-6">
-          <p class="text-sm font-black text-slate-400">Net balance</p>
-          <p id="netBalance" class="tabnum text-4xl font-black tracking-tight break-all">₹0.00</p>
+      <div class="mt-3 flex items-stretch gap-3">
+        <div class="flex-1 min-w-0">
+          <p class="text-xs font-black text-slate-400">Net balance</p>
+          <p id="netBalance" class="tabnum text-3xl font-black tracking-tight truncate">₹0.00</p>
         </div>
-
-        <div class="mt-5 grid grid-cols-2 gap-3">
-          <div class="border-4 border-emerald-400 p-3">
-            <p class="text-xs font-black text-emerald-300"><i class="fa-solid fa-arrow-trend-up mr-1" aria-hidden="true"></i>Total income</p>
-            <p id="totalIncome" class="tabnum text-lg font-black text-emerald-400 break-all">₹0.00</p>
-          </div>
-          <div class="border-4 border-red-400 p-3">
-            <p class="text-xs font-black text-red-300"><i class="fa-solid fa-arrow-trend-down mr-1" aria-hidden="true"></i>Total expenses</p>
-            <p id="totalExpense" class="tabnum text-lg font-black text-red-400 break-all">₹0.00</p>
-          </div>
+        <div class="shrink-0 border-l-4 border-slate-700 pl-3 flex flex-col justify-center gap-1 text-right max-w-[48%]">
+          <p class="text-xs font-black text-emerald-300 truncate">Income <span id="totalIncome" class="tabnum text-emerald-400">₹0.00</span></p>
+          <p class="text-xs font-black text-red-300 truncate">Expenses <span id="totalExpense" class="tabnum text-red-400">₹0.00</span></p>
         </div>
-      </header>
+      </div>
+    </header>
 
-      <!-- ADD TRANSACTION -->
-      <section class="p-5" aria-labelledby="formTitle">
-        <h2 id="formTitle" class="text-xl font-black mb-4">Add transaction</h2>
+    <!-- SCROLLING CONTENT AREA -->
+    <div id="scroller">
 
+      <!-- TAB: ADD -->
+      <section id="tab-add" class="p-4" aria-label="Add transaction">
         <form id="txnForm" class="space-y-4 border-4 border-[#111827] bg-white p-4" autocomplete="off">
           <!-- Type toggle -->
           <fieldset>
-            <legend class="sr-only">Transaction type</legend>
+            <legend class="block text-sm font-black mb-1">Type</legend>
             <div class="grid grid-cols-2 border-4 border-[#111827]">
               <label class="cursor-pointer">
                 <input type="radio" name="type" value="expense" class="peer sr-only" checked />
@@ -93,6 +120,25 @@
                 <input type="radio" name="type" value="income" class="peer sr-only" />
                 <span class="flex items-center justify-center gap-2 py-3 font-black bg-white text-[#111827] peer-checked:bg-[#111827] peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-4 peer-focus-visible:-outline-offset-4 peer-focus-visible:outline-indigo-500">
                   <i class="fa-solid fa-arrow-up" aria-hidden="true"></i> Income
+                </span>
+              </label>
+            </div>
+          </fieldset>
+
+          <!-- Payment mode -->
+          <fieldset>
+            <legend class="block text-sm font-black mb-1">Paid through</legend>
+            <div class="grid grid-cols-2 border-4 border-[#111827]">
+              <label class="cursor-pointer">
+                <input type="radio" name="mode" value="bank" class="peer sr-only" checked />
+                <span class="flex items-center justify-center gap-2 py-3 font-black bg-white text-[#111827] peer-checked:bg-[#111827] peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-4 peer-focus-visible:-outline-offset-4 peer-focus-visible:outline-indigo-500">
+                  <i class="fa-solid fa-building-columns" aria-hidden="true"></i> Bank / Online
+                </span>
+              </label>
+              <label class="cursor-pointer border-l-4 border-[#111827]">
+                <input type="radio" name="mode" value="cash" class="peer sr-only" />
+                <span class="flex items-center justify-center gap-2 py-3 font-black bg-white text-[#111827] peer-checked:bg-[#111827] peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-4 peer-focus-visible:-outline-offset-4 peer-focus-visible:outline-indigo-500">
+                  <i class="fa-solid fa-sack-dollar" aria-hidden="true"></i> Cash
                 </span>
               </label>
             </div>
@@ -128,39 +174,79 @@
         </form>
       </section>
 
-      <!-- TRANSACTION LIST -->
-      <section class="px-5 pb-2" aria-labelledby="listTitle">
-        <div class="flex items-baseline justify-between mb-3">
-          <h2 id="listTitle" class="text-xl font-black">Transactions</h2>
+      <!-- TAB: HISTORY -->
+      <section id="tab-history" class="hidden p-4" aria-label="Transactions">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-black">Transactions</h2>
           <span id="countLabel" class="text-sm font-black text-slate-500"></span>
+        </div>
+        <div id="filters" class="grid grid-cols-3 border-4 border-[#111827] mb-3 bg-white">
+          <button type="button" data-filter="all" class="seg py-2.5 font-black" aria-pressed="true">All</button>
+          <button type="button" data-filter="bank" class="seg py-2.5 font-black border-l-4 border-[#111827]" aria-pressed="false">Bank</button>
+          <button type="button" data-filter="cash" class="seg py-2.5 font-black border-l-4 border-[#111827]" aria-pressed="false">Cash</button>
         </div>
         <ul id="txnList" class="space-y-3"></ul>
         <div id="emptyState" class="hidden border-4 border-dashed border-slate-400 p-6 text-center">
           <i class="fa-solid fa-receipt text-3xl text-slate-400" aria-hidden="true"></i>
-          <p class="mt-2 font-black">Nothing recorded this month</p>
-          <p class="text-sm font-semibold text-slate-500">Add your first income or expense above.</p>
+          <p class="mt-2 font-black">Nothing here yet</p>
+          <p class="text-sm font-semibold text-slate-500">Record a transaction from the Add tab.</p>
         </div>
       </section>
 
-      <!-- EXPORT / IMPORT -->
-      <section class="p-5 space-y-3">
-        <button id="pdfBtn" type="button"
-          class="w-full bg-[#111827] text-white font-black py-4 border-4 border-[#111827] shadow-[5px_5px_0_0_#6366f1] active:translate-x-[3px] active:translate-y-[3px] active:shadow-[2px_2px_0_0_#6366f1] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 transition-all">
-          <i class="fa-solid fa-file-pdf mr-2" aria-hidden="true"></i>Download monthly PDF
-        </button>
-        <button id="importBtn" type="button"
-          class="w-full bg-white text-[#111827] font-black py-4 border-4 border-[#111827] hover:bg-slate-100 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
-          <i class="fa-solid fa-file-import mr-2" aria-hidden="true"></i>Import bank PDF
-        </button>
-        <p class="pt-2 text-center text-xs font-bold text-slate-500">
-          <i class="fa-solid fa-lock mr-1" aria-hidden="true"></i>Stored only on this device. Works offline.
-        </p>
+      <!-- TAB: CASH -->
+      <section id="tab-cash" class="hidden p-4" aria-label="Cash">
+        <div class="bg-[#111827] text-white border-4 border-black p-4">
+          <p class="text-xs font-black text-slate-400"><i class="fa-solid fa-sack-dollar mr-1" aria-hidden="true"></i>Cash in hand</p>
+          <p id="cashBalance" class="tabnum text-4xl font-black tracking-tight break-all">₹0.00</p>
+          <p class="mt-1 text-xs font-bold text-slate-400">Cash credited minus cash debited this month</p>
+        </div>
+
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <div class="border-4 border-emerald-500 bg-white p-3">
+            <p class="text-xs font-black text-emerald-700"><i class="fa-solid fa-arrow-down mr-1" aria-hidden="true"></i>Cash in (credited)</p>
+            <p id="cashIn" class="tabnum text-lg font-black text-emerald-600 break-all">₹0.00</p>
+          </div>
+          <div class="border-4 border-red-500 bg-white p-3">
+            <p class="text-xs font-black text-red-700"><i class="fa-solid fa-arrow-up mr-1" aria-hidden="true"></i>Cash out (debited)</p>
+            <p id="cashOut" class="tabnum text-lg font-black text-red-600 break-all">₹0.00</p>
+          </div>
+        </div>
+
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <button id="quickCashIn" type="button"
+            class="bg-[#111827] text-white font-black py-3.5 border-4 border-[#111827] shadow-[4px_4px_0_0_#10b981] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0_0_#10b981]">
+            <i class="fa-solid fa-plus mr-1" aria-hidden="true"></i>Add cash in
+          </button>
+          <button id="quickCashOut" type="button"
+            class="bg-[#111827] text-white font-black py-3.5 border-4 border-[#111827] shadow-[4px_4px_0_0_#ef4444] active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0_0_#ef4444]">
+            <i class="fa-solid fa-minus mr-1" aria-hidden="true"></i>Add cash out
+          </button>
+        </div>
+
+        <h2 class="mt-5 mb-3 text-xl font-black">Cash transactions</h2>
+        <ul id="cashList" class="space-y-3"></ul>
+        <div id="cashEmpty" class="hidden border-4 border-dashed border-slate-400 p-6 text-center">
+          <i class="fa-solid fa-sack-dollar text-3xl text-slate-400" aria-hidden="true"></i>
+          <p class="mt-2 font-black">No cash entries yet</p>
+          <p class="text-sm font-semibold text-slate-500">Choose Cash under "Paid through" when you record a transaction.</p>
+        </div>
       </section>
 
-      <!-- SAVED MONTHLY REPORTS -->
-      <section class="px-5 pb-8" aria-labelledby="archiveTitle">
-        <div class="flex items-baseline justify-between mb-3">
-          <h2 id="archiveTitle" class="text-xl font-black">Saved reports</h2>
+      <!-- TAB: REPORTS -->
+      <section id="tab-reports" class="hidden p-4" aria-label="Reports">
+        <div class="space-y-3">
+          <button id="pdfBtn" type="button"
+            class="w-full bg-[#111827] text-white font-black py-4 border-4 border-[#111827] shadow-[5px_5px_0_0_#6366f1] active:translate-x-[3px] active:translate-y-[3px] active:shadow-[2px_2px_0_0_#6366f1] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 transition-all">
+            <i class="fa-solid fa-file-pdf mr-2" aria-hidden="true"></i>Download monthly PDF
+          </button>
+          <button id="importBtn" type="button"
+            class="w-full bg-white text-[#111827] font-black py-4 border-4 border-[#111827] active:bg-slate-100 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+            <i class="fa-solid fa-file-import mr-2" aria-hidden="true"></i>Import bank PDF
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between mt-6 mb-3">
+          <h2 class="text-xl font-black">Saved reports</h2>
           <span id="archiveCount" class="text-sm font-black text-slate-500"></span>
         </div>
         <ul id="archiveList" class="space-y-3"></ul>
@@ -169,13 +255,34 @@
           <p class="mt-2 font-black">No saved reports yet</p>
           <p class="text-sm font-semibold text-slate-500">Each PDF you download, and each month you close, is kept here on this device.</p>
         </div>
+        <p class="pt-5 text-center text-xs font-bold text-slate-500">
+          <i class="fa-solid fa-lock mr-1" aria-hidden="true"></i>Stored only on this device. Works offline.
+        </p>
       </section>
-    </main>
-  </div>
+    </div>
 
-  <!-- Toast -->
-  <div id="toast" role="status" aria-live="polite"
-    class="fixed left-1/2 -translate-x-1/2 bottom-6 z-50 hidden max-w-[90vw] bg-[#111827] text-white font-black px-5 py-3 border-4 border-white shadow-[5px_5px_0_0_#6366f1]"></div>
+    <!-- FIXED BOTTOM NAVIGATION -->
+    <nav class="shrink-0 grid grid-cols-4 bg-white border-t-4 border-[#111827]" role="tablist" aria-label="Sections"
+         style="padding-bottom: env(safe-area-inset-bottom, 0px)">
+      <button type="button" role="tab" data-tab="add" aria-selected="true" class="navbtn flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-black text-slate-600">
+        <i class="fa-solid fa-circle-plus text-xl" aria-hidden="true"></i>Add
+      </button>
+      <button type="button" role="tab" data-tab="history" aria-selected="false" class="navbtn flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-black text-slate-600 border-l-4 border-[#111827]">
+        <i class="fa-solid fa-list text-xl" aria-hidden="true"></i>History
+      </button>
+      <button type="button" role="tab" data-tab="cash" aria-selected="false" class="navbtn flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-black text-slate-600 border-l-4 border-[#111827]">
+        <i class="fa-solid fa-wallet text-xl" aria-hidden="true"></i>Cash
+      </button>
+      <button type="button" role="tab" data-tab="reports" aria-selected="false" class="navbtn flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-black text-slate-600 border-l-4 border-[#111827]">
+        <i class="fa-solid fa-file-pdf text-xl" aria-hidden="true"></i>Reports
+      </button>
+    </nav>
+
+    <!-- Toast -->
+    <div id="toast" role="status" aria-live="polite"
+      class="absolute left-1/2 -translate-x-1/2 z-50 hidden max-w-[90%] bg-[#111827] text-white text-sm font-black px-4 py-3 border-4 border-white shadow-[5px_5px_0_0_#6366f1]"
+      style="bottom: calc(env(safe-area-inset-bottom, 0px) + 84px)"></div>
+  </div>
 
   <script>
     (() => {
@@ -194,6 +301,7 @@
         { name: 'Others',  icon: 'fa-ellipsis' }
       ];
       const iconFor = (name) => (CATEGORIES.find(c => c.name === name) || CATEGORIES[CATEGORIES.length - 1]).icon;
+      const modeOf = (t) => (t.mode === 'cash' ? 'cash' : 'bank'); // older entries have no mode: treat as bank
 
       /* ---------- State & storage ---------- */
       const load = () => {
@@ -208,6 +316,7 @@
         catch (e) { toast('Could not save. Storage may be full or blocked.'); }
       };
       let txns = load();
+      let filter = 'all';
 
       /* ---------- Helpers ---------- */
       const $ = (id) => document.getElementById(id);
@@ -218,6 +327,7 @@
         const expense = list.filter(t => t.type === 'expense').reduce((a, t) => a + t.amount, 0);
         return { income, expense, net: income - expense };
       };
+      const signed = (n, cur = CURRENCY) => (n < 0 ? '-' : '') + money(Math.abs(n), cur);
       const monthLabel = () => new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       const fmtDate = (iso) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 
@@ -229,6 +339,17 @@
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => el.classList.add('hidden'), 2600);
       }
+
+      /* ---------- Tabs ---------- */
+      function showTab(name) {
+        ['add', 'history', 'cash', 'reports'].forEach(n => $('tab-' + n).classList.toggle('hidden', n !== name));
+        document.querySelectorAll('.navbtn').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+        $('scroller').scrollTop = 0;
+      }
+      document.querySelector('nav').addEventListener('click', (e) => {
+        const b = e.target.closest('.navbtn');
+        if (b) showTab(b.dataset.tab);
+      });
 
       /* ---------- Category chips ---------- */
       function buildChips() {
@@ -244,47 +365,64 @@
       }
 
       /* ---------- Render ---------- */
+      function rowFor(t) {
+        const isIncome = t.type === 'income';
+        const li = document.createElement('li');
+        li.className = 'txn bg-white border-4 border-[#111827] p-3 flex items-center gap-3 outline-none focus-visible:ring-4 focus-visible:ring-indigo-400';
+        li.tabIndex = 0;
+        li.dataset.id = t.id;
+        li.innerHTML = `
+          <div class="shrink-0 w-12 h-12 grid place-items-center bg-[#111827] text-white text-lg">
+            <i class="fa-solid ${iconFor(t.category)}" aria-hidden="true"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="desc font-black truncate"></p>
+            <p class="text-xs font-bold text-slate-500">${t.category}, ${fmtDate(t.date)}${modeOf(t) === 'cash' ? ' <span class="ml-1 px-1.5 py-0.5 text-[10px] bg-[#111827] text-white font-black">CASH</span>' : ''}</p>
+          </div>
+          <p class="tabnum shrink-0 font-black text-right ${isIncome ? 'text-emerald-600' : 'text-red-600'}">
+            ${isIncome ? '+' : '-'}${money(t.amount)}
+          </p>
+          <button type="button" class="del shrink-0 w-10 h-10 grid place-items-center border-4 border-[#111827] text-[#111827] hover:bg-red-600 hover:border-red-600 hover:text-white focus-visible:bg-red-600 focus-visible:border-red-600 focus-visible:text-white"
+            aria-label="Delete transaction">
+            <i class="fa-solid fa-trash" aria-hidden="true"></i>
+          </button>`;
+        li.querySelector('.desc').textContent = t.desc; // textContent keeps user input safe
+        return li;
+      }
+
       function render() {
         $('monthLabel').textContent = monthLabel();
 
-        const { income, expense, net } = sums(txns);
-        $('totalIncome').textContent = money(income);
-        $('totalExpense').textContent = money(expense);
+        const all = sums(txns);
+        $('totalIncome').textContent = money(all.income);
+        $('totalExpense').textContent = money(all.expense);
         const netEl = $('netBalance');
-        netEl.textContent = (net < 0 ? '-' : '') + money(Math.abs(net));
-        netEl.classList.toggle('text-red-300', net < 0);
+        netEl.textContent = signed(all.net);
+        netEl.classList.toggle('text-red-300', all.net < 0);
 
         const sorted = [...txns].sort((a, b) => new Date(b.date) - new Date(a.date) || b.id.localeCompare(a.id));
+
+        // History (with All / Bank / Cash filter)
+        const shown = sorted.filter(t => filter === 'all' || modeOf(t) === filter);
         const list = $('txnList');
         list.innerHTML = '';
+        shown.forEach(t => list.appendChild(rowFor(t)));
+        $('emptyState').classList.toggle('hidden', shown.length > 0);
+        $('countLabel').textContent = shown.length ? `${shown.length} ${shown.length === 1 ? 'entry' : 'entries'}` : '';
+        document.querySelectorAll('#filters .seg').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === filter)));
 
-        sorted.forEach(t => {
-          const isIncome = t.type === 'income';
-          const li = document.createElement('li');
-          li.className = 'txn bg-white border-4 border-[#111827] p-3 flex items-center gap-3 outline-none focus-visible:ring-4 focus-visible:ring-indigo-400';
-          li.tabIndex = 0;
-          li.dataset.id = t.id;
-          li.innerHTML = `
-            <div class="shrink-0 w-12 h-12 grid place-items-center bg-[#111827] text-white text-lg">
-              <i class="fa-solid ${iconFor(t.category)}" aria-hidden="true"></i>
-            </div>
-            <div class="min-w-0 flex-1">
-              <p class="desc font-black truncate"></p>
-              <p class="text-xs font-bold text-slate-500">${t.category}, ${fmtDate(t.date)}</p>
-            </div>
-            <p class="tabnum shrink-0 font-black text-right ${isIncome ? 'text-emerald-600' : 'text-red-600'}">
-              ${isIncome ? '+' : '-'}${money(t.amount)}
-            </p>
-            <button type="button" class="del shrink-0 w-10 h-10 grid place-items-center border-4 border-[#111827] text-[#111827] hover:bg-red-600 hover:border-red-600 hover:text-white focus-visible:bg-red-600 focus-visible:border-red-600 focus-visible:text-white"
-              aria-label="Delete transaction">
-              <i class="fa-solid fa-trash" aria-hidden="true"></i>
-            </button>`;
-          li.querySelector('.desc').textContent = t.desc; // textContent keeps user input safe
-          list.appendChild(li);
-        });
-
-        $('emptyState').classList.toggle('hidden', sorted.length > 0);
-        $('countLabel').textContent = sorted.length ? `${sorted.length} ${sorted.length === 1 ? 'entry' : 'entries'}` : '';
+        // Cash
+        const cashTx = sorted.filter(t => modeOf(t) === 'cash');
+        const c = sums(cashTx);
+        $('cashIn').textContent = money(c.income);
+        $('cashOut').textContent = money(c.expense);
+        const cb = $('cashBalance');
+        cb.textContent = signed(c.net);
+        cb.classList.toggle('text-red-300', c.net < 0);
+        const cl = $('cashList');
+        cl.innerHTML = '';
+        cashTx.forEach(t => cl.appendChild(rowFor(t)));
+        $('cashEmpty').classList.toggle('hidden', cashTx.length > 0);
       }
 
       /* ---------- Events ---------- */
@@ -297,6 +435,7 @@
         txns.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
           type: f.type.value,
+          mode: f.mode.value,
           amount: Math.round(amount * 100) / 100,
           desc: f.desc.value.trim() || category,
           category,
@@ -307,10 +446,11 @@
         f.amount.value = '';
         f.desc.value = '';
         f.amount.focus();
-        toast('Transaction recorded');
+        toast(f.mode.value === 'cash' ? 'Cash entry recorded' : 'Transaction recorded');
       });
 
-      $('txnList').addEventListener('click', (e) => {
+      // Shared by the History and Cash lists
+      function onListClick(e) {
         const row = e.target.closest('.txn');
         if (!row) return;
         if (e.target.closest('.del')) {
@@ -324,28 +464,26 @@
         const wasOpen = row.classList.contains('revealed');
         document.querySelectorAll('.txn.revealed').forEach(r => r.classList.remove('revealed'));
         if (!wasOpen) row.classList.add('revealed');
+      }
+      $('txnList').addEventListener('click', onListClick);
+      $('cashList').addEventListener('click', onListClick);
+
+      $('filters').addEventListener('click', (e) => {
+        const b = e.target.closest('.seg');
+        if (!b) return;
+        filter = b.dataset.filter;
+        render();
       });
 
-      $('newMonthBtn').addEventListener('click', async () => {
-        if (!txns.length) { toast('This month is already empty.'); return; }
-        const ok = confirm("Start a new month?\n\nThis month's PDF report is saved in Saved reports on this device first. Then all current transactions are cleared.");
-        if (!ok) return;
-        try {
-          if (!pdfReady()) throw new Error('PDF library not loaded');
-          const { record } = snapshot(txns, true);
-          await putReport(record);
-          await removeReport(record.monthKey); // replace the live snapshot with the closed copy
-        } catch (err) {
-          console.warn(err);
-          if (!confirm('The PDF report could not be saved. Clear this month anyway?')) return;
-        }
-        localStorage.removeItem(STORAGE_KEY);
-        txns = [];
-        $('txnForm').reset();
-        render();
-        renderArchive();
-        toast('New month started. Report saved.');
-      });
+      function quickCash(type) {
+        const f = $('txnForm');
+        f.querySelector(`input[name="type"][value="${type}"]`).checked = true;
+        f.querySelector('input[name="mode"][value="cash"]').checked = true;
+        showTab('add');
+        setTimeout(() => f.amount.focus(), 50);
+      }
+      $('quickCashIn').addEventListener('click', () => quickCash('income'));
+      $('quickCashOut').addEventListener('click', () => quickCash('expense'));
 
       $('importBtn').addEventListener('click', () => {
         alert('PDF Parsing requires backend OCR integration. Please log manually.');
@@ -402,13 +540,13 @@
             </div>
             <div class="min-w-0 flex-1">
               <p class="lbl font-black truncate"></p>
-              <p class="text-xs font-bold text-slate-500">${r.closed ? 'Month closed' : 'Snapshot'}, ${r.count} ${r.count === 1 ? 'entry' : 'entries'}, net ${r.net < 0 ? '-' : ''}${money(Math.abs(r.net))}</p>
+              <p class="text-xs font-bold text-slate-500">${r.closed ? 'Month closed' : 'Snapshot'}, ${r.count} ${r.count === 1 ? 'entry' : 'entries'}, net ${signed(r.net)}</p>
               <p class="text-xs font-semibold text-slate-400">Saved ${fmtDate(r.savedAt)}</p>
             </div>
-            <button type="button" data-act="dl" aria-label="Download report" class="shrink-0 w-10 h-10 grid place-items-center bg-[#111827] text-white border-4 border-[#111827] hover:bg-indigo-600 hover:border-indigo-600 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+            <button type="button" data-act="dl" aria-label="Download report" class="shrink-0 w-10 h-10 grid place-items-center bg-[#111827] text-white border-4 border-[#111827] active:bg-indigo-600 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
               <i class="fa-solid fa-download" aria-hidden="true"></i>
             </button>
-            <button type="button" data-act="rm" aria-label="Delete saved report" class="shrink-0 w-10 h-10 grid place-items-center border-4 border-[#111827] text-[#111827] hover:bg-red-600 hover:border-red-600 hover:text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+            <button type="button" data-act="rm" aria-label="Delete saved report" class="shrink-0 w-10 h-10 grid place-items-center border-4 border-[#111827] text-[#111827] active:bg-red-600 active:text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
               <i class="fa-solid fa-trash" aria-hidden="true"></i>
             </button>`;
           li.querySelector('.lbl').textContent = r.label;
@@ -455,6 +593,7 @@
         const pageH = doc.internal.pageSize.getHeight();
         const M = 40;
         const all = sums(list);
+        const cash = sums(list.filter(t => modeOf(t) === 'cash'));
 
         doc.setFillColor(17, 24, 39);
         doc.rect(0, 0, pageW, 96, 'F');
@@ -469,7 +608,7 @@
         const boxes = [
           { t: 'Total income',   v: money(all.income, PDF_CURRENCY),  c: [22, 163, 74] },
           { t: 'Total expenses', v: money(all.expense, PDF_CURRENCY), c: [220, 38, 38] },
-          { t: 'Net balance',    v: (all.net < 0 ? '-' : '') + money(Math.abs(all.net), PDF_CURRENCY), c: all.net < 0 ? [220, 38, 38] : [17, 24, 39] }
+          { t: 'Net balance',    v: signed(all.net, PDF_CURRENCY),    c: all.net < 0 ? [220, 38, 38] : [17, 24, 39] }
         ];
         boxes.forEach((b, i) => {
           const x = M + i * (boxW + 10);
@@ -484,7 +623,16 @@
           doc.text(b.v, x + 10, 156);
         });
 
-        let y = 200;
+        // Cash summary line
+        doc.setTextColor(17, 24, 39);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.text(
+          `Cash in (credited): ${money(cash.income, PDF_CURRENCY)}    Cash out (debited): ${money(cash.expense, PDF_CURRENCY)}    Cash in hand: ${signed(cash.net, PDF_CURRENCY)}`,
+          M, 192
+        );
+
+        let y = 226;
         CATEGORIES.forEach(cat => {
           const items = list.filter(t => t.category === cat.name)
             .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -499,19 +647,20 @@
           doc.autoTable({
             startY: y + 8,
             margin: { left: M, right: M },
-            head: [['Date', 'Description', 'Type', 'Amount']],
+            head: [['Date', 'Description', 'Mode', 'Type', 'Amount']],
             body: items.map(t => [
               fmtDate(t.date),
               t.desc,
+              modeOf(t) === 'cash' ? 'Cash' : 'Bank',
               t.type === 'income' ? 'Income' : 'Expense',
               (t.type === 'income' ? '+ ' : '- ') + money(t.amount, PDF_CURRENCY)
             ]),
             theme: 'grid',
             styles: { font: 'helvetica', fontSize: 9.5, cellPadding: 6, lineColor: [17, 24, 39], lineWidth: 0.6 },
             headStyles: { fillColor: [17, 24, 39], textColor: 255, fontStyle: 'bold' },
-            columnStyles: { 0: { cellWidth: 80 }, 2: { cellWidth: 60 }, 3: { halign: 'right', cellWidth: 100, fontStyle: 'bold' } },
+            columnStyles: { 0: { cellWidth: 72 }, 2: { cellWidth: 44 }, 3: { cellWidth: 52 }, 4: { halign: 'right', cellWidth: 95, fontStyle: 'bold' } },
             didParseCell: (d) => {
-              if (d.section === 'body' && d.column.index === 3) {
+              if (d.section === 'body' && d.column.index === 4) {
                 d.cell.styles.textColor = items[d.row.index].type === 'income' ? [22, 163, 74] : [220, 38, 38];
               }
             }
@@ -523,9 +672,8 @@
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(10);
           doc.setTextColor(17, 24, 39);
-          const net = (s.net < 0 ? '-' : '') + money(Math.abs(s.net), PDF_CURRENCY);
           doc.text(
-            `${cat.name} subtotal:  Income ${money(s.income, PDF_CURRENCY)}   Expenses ${money(s.expense, PDF_CURRENCY)}   Net ${net}`,
+            `${cat.name} subtotal:  Income ${money(s.income, PDF_CURRENCY)}   Expenses ${money(s.expense, PDF_CURRENCY)}   Net ${signed(s.net, PDF_CURRENCY)}`,
             pageW - M, y, { align: 'right' }
           );
           y += 34;
@@ -543,7 +691,6 @@
         return doc;
       }
 
-      // Builds the PDF and the record that gets stored in IndexedDB.
       // closed=false: live snapshot, overwritten on the next download for the same month.
       // closed=true: permanent copy made when the month is closed.
       function snapshot(list, closed) {
@@ -582,6 +729,27 @@
         }
         doc.save(filename);
         toast('PDF downloaded and saved');
+      });
+
+      $('newMonthBtn').addEventListener('click', async () => {
+        if (!txns.length) { toast('This month is already empty.'); return; }
+        const ok = confirm("Start a new month?\n\nThis month's PDF report is saved in Saved reports on this device first. Then all current transactions are cleared.");
+        if (!ok) return;
+        try {
+          if (!pdfReady()) throw new Error('PDF library not loaded');
+          const { record } = snapshot(txns, true);
+          await putReport(record);
+          await removeReport(record.monthKey); // replace the live snapshot with the closed copy
+        } catch (err) {
+          console.warn(err);
+          if (!confirm('The PDF report could not be saved. Clear this month anyway?')) return;
+        }
+        localStorage.removeItem(STORAGE_KEY);
+        txns = [];
+        $('txnForm').reset();
+        render();
+        renderArchive();
+        toast('New month started. Report saved.');
       });
 
       /* ---------- Init ---------- */
