@@ -32,20 +32,26 @@
       -webkit-text-size-adjust: 100%;
       touch-action: manipulation;
     }
+    /* The app always fills the whole phone screen: no side bands, no max width on touch devices.
+       If the browser reports a wider layout viewport than the phone (e.g. Chrome "Desktop site"),
+       JS sets --s and the whole app is scaled to fit, so it still lays out like a phone. */
+    :root { --s: 1; }
     #app {
       position: fixed;
-      top: 0; bottom: 0; left: 0; right: 0;
-      margin: 0 auto;
-      width: 100%;
-      max-width: 30rem;
+      top: 0; left: 0;
+      width: calc(100% / var(--s));
+      height: calc(100% / var(--s));
+      transform: scale(var(--s));
+      transform-origin: 0 0;
       display: flex;
       flex-direction: column;
       background: #f1f5f9;
       color: #0f172a;
       overflow: hidden;
     }
-    @media (min-width: 31rem) {
-      #app { border-left: 4px solid #111827; border-right: 4px solid #111827; box-shadow: 0 0 0 1px #1f2937; }
+    /* Only a real mouse-and-keyboard desktop gets a centred phone-width column */
+    @media (hover: hover) and (pointer: fine) and (min-width: 31rem) {
+      #app { left: 50%; width: 30rem; transform: translateX(-50%); border-left: 4px solid #111827; border-right: 4px solid #111827; box-sizing: border-box; }
     }
     #scroller {
       flex: 1 1 auto;
@@ -751,6 +757,21 @@
         renderArchive();
         toast('New month started. Report saved.');
       });
+
+      /* ---------- Fit to phone screen ---------- */
+      function fitToScreen() {
+        let scale = 1;
+        const touch = (navigator.maxTouchPoints || 0) > 0 && window.matchMedia("(pointer: coarse)").matches;
+        if (touch) {
+          const portrait = window.innerHeight > window.innerWidth;
+          const phoneW = portrait ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+          if (phoneW > 0 && window.innerWidth > phoneW * 1.15) scale = Math.min(window.innerWidth / phoneW, 4);
+        }
+        document.documentElement.style.setProperty("--s", scale.toFixed(4));
+      }
+      fitToScreen();
+      window.addEventListener("resize", fitToScreen);
+      window.addEventListener("orientationchange", fitToScreen);
 
       /* ---------- Init ---------- */
       buildChips();
